@@ -25,8 +25,7 @@ defmodule FonaModem.MixProject do
       # {:dep_from_git, git: "https://github.com/elixir-lang/my_dep.git", tag: "0.1.0"}
       {:circuits_uart, "~> 1.5.1"},
       # keypad wants this version of gpio
-      {:circuits_gpio, "~> 0.4.8"},
-      {:keypad, "~> 0.3"}
+      {:circuits_gpio, "~> 0.4.8"}
     ]
   end
 end

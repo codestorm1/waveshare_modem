@@ -37,6 +37,8 @@ defmodule FonaModem do
     dtr_pin = Application.fetch_env!(:fona_modem, :dtr_pin)
     uart_name = Application.fetch_env!(:fona_modem, :uart_name)
 
+    Logger.info("[Modem Server] key #{key_pin} dtr #{dtr_pin}")
+
     {:ok, uart_pid} = UART.start_link()
     speed = 115_200
 
@@ -225,30 +227,18 @@ defmodule FonaModem do
   end
 
   defp get_response(uart_pid, timeout_ms) do
+    # Circuits.UART.read can return: {:ok, {:partial, "DEFG"}}
+    # is their typespec wrong?
+    # @spec read(GenServer.server(), non_neg_integer()) :: {:ok, binary()} | {:error, File.posix()}
     case UART.read(uart_pid, timeout_ms) do
-      {:ok, resp} ->
-        case resp do
-          {:partial, partial} ->
-            Logger.info("partial response! partial: #{partial}")
-            {:ok, partial <> get_response(uart_pid, timeout_ms)}
+      {:ok, {:partial, data}} ->
+        Logger.info("partial response! partial: #{data}")
 
-          x when is_binary(x) ->
-            {:ok, resp}
-        end
+        {:ok, data <> get_response(uart_pid, timeout_ms)}
 
-      # {:ok, prev_resp <> resp}
-
-      # ** (EXIT) an exception was raised:
-      # ** (MatchError) no match of right hand side value: {:error, {:badarg, [{VintageCell.ModemServer, :get_response, 3, [file: 'lib/fona_modem/modem_server.ex', line: 229, error_info: %{cause: {2, :binary, :type, {:partial, <<0>>}}, function: :format_bs_fail, module: :erl_erts_errors}]}, {VintageCell.ModemServer, :send_command_get_response, 2, [file: 'lib/fona_modem/modem_server.ex', line: 206]}, {VintageCell.ModemServer, :request_battery_percent, 1, [file: 'lib/fona_modem/modem_server.ex', line: 145]}, {VintageCell.ModemServer, :init, 1, [file: 'lib/fona_modem/modem_server.ex', line: 55]}, {:gen_server, :init_it, 2, [file: 'gen_server.erl', line: 851]}, {:gen_server, :init_it, 6, [file: 'gen_server.erl', line: 814]}, {:proc_lib, :init_p_do_apply, 3, [file: 'proc_lib.erl', line: 240]}]}}
-      #     (fona_modem 0.1.0) lib/fona_modem.ex:54: VintageCell.Worker.init/1
-      #     (stdlib 4.3) gen_server.erl:851: :gen_server.init_it/2
-      #     (stdlib 4.3) gen_server.erl:814: :gen_server.init_it/6
-      #     (stdlib 4.3) proc_lib.erl:240: :proc_lib.init_p_do_apply/3
-      # Circuits.UART typespec is missing this return value
-      unexpected ->
-        err = "<unexpected: #{inspect(unexpected)}"
-        Logger.warning(err)
-        {:ok, err}
+      {:ok, data} ->
+        Logger.info("returning data: #{data}")
+        {:ok, data}
     end
   end
 end
