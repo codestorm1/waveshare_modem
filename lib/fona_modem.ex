@@ -25,13 +25,13 @@ defmodule FonaModem do
   # 4 seconds seems too long, why are :partial results coming in?
   @rx_framing_timeout 4000
 
-  def start_link(client_pid) do
+  def start_link(state) do
     Logger.info("[Modem Server] start_link")
-    GenServer.start_link(__MODULE__, client_pid, name: FonaModem)
+    GenServer.start_link(__MODULE__, state, name: FonaModem)
   end
 
   @impl GenServer
-  def init(client_pid) do
+  def init(_init_state) do
     Logger.info("[Modem Server] init")
     key_pin = Application.fetch_env!(:fona_modem, :key_pin)
     dtr_pin = Application.fetch_env!(:fona_modem, :dtr_pin)
@@ -68,7 +68,7 @@ defmodule FonaModem do
     {:ok, dtr} = Circuits.GPIO.open(dtr_pin, :output)
     wake_FONA(dtr)
 
-    state = %{client_pid: client_pid, uart_pid: uart_pid, modem_status: modem_status, dtr: dtr}
+    state = %{uart_pid: uart_pid, modem_status: modem_status, dtr: dtr}
     {:ok, state}
   end
 
@@ -76,8 +76,8 @@ defmodule FonaModem do
   # :play_tone also means the phone was taken off hook
   def handle_call({:play_tone, tone}, {_pid, _reference}, %{uart_pid: uart_pid, dtr: dtr} = state) do
     :ok = wake_FONA(dtr)
-    response = play_tone(uart_pid, tone)
-    # {:ok, response} = play_tone(uart_pid, tone)
+    response = do_play_tone(uart_pid, tone)
+    # {:ok, response} = do_play_tone(uart_pid, tone)
 
     Logger.info("[Modem Server] response to play tone: #{inspect(response)}")
     state = Map.put(state, :modem_status, :playing_dial_tone)
@@ -95,7 +95,7 @@ defmodule FonaModem do
   @impl GenServer
   def handle_call(:hang_up, {_pid, _reference}, %{uart_pid: uart_pid, dtr: dtr} = state) do
     Logger.info("[Modem Server] handle call :hangup")
-    hang_up(uart_pid)
+    do_hang_up(uart_pid)
     sleep_FONA(dtr)
     state = Map.put(state, :modem_status, :on_hook)
     {:reply, :ok, state}
@@ -134,6 +134,25 @@ defmodule FonaModem do
     {:reply, {:ok, response}, state}
   end
 
+  # Public Api
+  #
+  def play_tone(tone) when is_binary(tone) do
+    GenServer.call(__MODULE__, {:play_tone, tone})
+  end
+
+  def make_phone_call(phone_number) when is_binary(phone_number) do
+    GenServer.call(__MODULE__, {:make_phone_call, phone_number})
+  end
+
+  def send_at_command(command) when is_binary(command) do
+    GenServer.call(__MODULE__, {:send_at_command, command})
+  end
+
+  def hang_up() do
+    GenServer.call(__MODULE__, :hang_up)
+    # GenServer.cast(__MODULE__, {:insert, event})
+  end
+
   # Private methods
 
   defp init_modem(uart_pid) do
@@ -150,7 +169,7 @@ defmodule FonaModem do
     if String.match?(response, ~r/CBC/), do: :up, else: :down
   end
 
-  defp play_tone(uart_pid, 0) do
+  defp do_play_tone(uart_pid, 0) do
     # kill the playing sound
     # no EXT, no =, just CPTONEEXT
     {:ok, response} = send_command_get_response(uart_pid, "AT+CPTONEEXT\r\n")
@@ -158,7 +177,7 @@ defmodule FonaModem do
     {:ok, response}
   end
 
-  defp play_tone(uart_pid, tone) do
+  defp do_play_tone(uart_pid, tone) do
     if tone == 2 do
       Logger.info("[Modem Server] playing dial tone")
     else
@@ -178,13 +197,13 @@ defmodule FonaModem do
     Circuits.GPIO.write(dtr, 0)
   end
 
-  defp hang_up(uart_pid) do
+  defp do_hang_up(uart_pid) do
     Logger.info("[Modem Server] hanging up")
     # ATH is ignored unless AT+CVHU=0 is set.  use AT+CHUP instead
     {:ok, _response} = send_command_get_response(uart_pid, "AT+CHUP\r\n")
     # VOICE CALL:END:000017 <- (timestamp)
     # kill the playing sound
-    play_tone(uart_pid, 0)
+    do_play_tone(uart_pid, 0)
   end
 
   defp set_loudspeaker_volume(uart_pid, volume) do
