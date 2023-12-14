@@ -25,26 +25,53 @@ defmodule FonaModem do
   # 4 seconds seems too long, why are :partial results coming in?
   @rx_framing_timeout 4000
 
+  # Client API
+  #
+  def play_tone(tone) do
+    GenServer.call(__MODULE__, {:play_tone, tone})
+  end
+
+  def play_ext_tone(tone) do
+    GenServer.call(__MODULE__, {:play_ext_tone, tone})
+  end
+
+  def cancel_ext_tone() do
+    GenServer.call(__MODULE__, {:cancel_ext_tone})
+  end
+
+  def make_phone_call(phone_number) when is_binary(phone_number) do
+    GenServer.call(__MODULE__, {:make_phone_call, phone_number})
+  end
+
+  def send_at_command(command) when is_binary(command) do
+    GenServer.call(__MODULE__, {:send_at_command, command})
+  end
+
+  def hang_up() do
+    GenServer.call(__MODULE__, :hang_up)
+    # GenServer.cast(__MODULE__, {:insert, event})
+  end
+
   def start_link(state) do
-    Logger.info("[Modem Server] start_link")
+    Logger.info("[Fona Modem] start_link")
     GenServer.start_link(__MODULE__, state, name: FonaModem)
   end
 
   @impl GenServer
   def init(_init_state) do
-    Logger.info("[Modem Server] init")
+    Logger.info("[Fona Modem] init.  pid: #{inspect(self())}")
     key_pin = Application.fetch_env!(:fona_modem, :key_pin)
     dtr_pin = Application.fetch_env!(:fona_modem, :dtr_pin)
     uart_name = Application.fetch_env!(:fona_modem, :uart_name)
 
-    Logger.info("[Modem Server] key #{key_pin} dtr #{dtr_pin}")
+    Logger.info("[Fona Modem] key #{key_pin} dtr #{dtr_pin}")
 
     {:ok, uart_pid} = UART.start_link()
     speed = 115_200
 
     # Mango Pi Pro
     # :ok = UART.open(uart_pid, "ttyS0", speed: 115_200, active: false)
-    Logger.info("[Modem Server] open uart at name #{uart_name} at speed #{speed}")
+    Logger.info("[Fona Modem] open uart at name #{uart_name} at speed #{speed}")
 
     :ok = UART.open(uart_pid, uart_name, speed: speed, active: false)
 
@@ -55,7 +82,7 @@ defmodule FonaModem do
     UART.configure(uart_pid, framing: {UART.Framing.Line, separator: "\r\n"})
 
     modem_status = init_modem(uart_pid)
-    Logger.info("[Modem Server] modem status: #{modem_status}")
+    Logger.info("[Fona Modem] modem status: #{modem_status}")
 
     {:ok, _response} = set_loudspeaker_volume(uart_pid, @max_volume)
 
@@ -73,28 +100,39 @@ defmodule FonaModem do
   end
 
   @impl GenServer
-  # :play_tone also means the phone was taken off hook
   def handle_call({:play_tone, tone}, {_pid, _reference}, %{uart_pid: uart_pid, dtr: dtr} = state) do
     :ok = wake_FONA(dtr)
     response = do_play_tone(uart_pid, tone)
     # {:ok, response} = do_play_tone(uart_pid, tone)
 
-    Logger.info("[Modem Server] response to play tone: #{inspect(response)}")
-    state = Map.put(state, :modem_status, :playing_dial_tone)
+    Logger.info("[Fona Modem] response to play tone: #{inspect(response)}")
+    state = Map.put(state, :modem_status, :playing_tone)
 
     {:reply, :ok, state}
   end
 
-  @impl GenServer
-  def handle_call({:partial, response}, {_pid, _reference}, state) do
-    Logger.info("[Modem Server] *PARTIAL* response came in? #{inspect(response)}")
+  def handle_call({:play_ext_tone, tone}, _from, %{uart_pid: uart_pid, dtr: dtr} = state) do
+    :ok = wake_FONA(dtr)
+    response = do_play_ext_tone(uart_pid, tone)
+
+    Logger.info("[Fona Modem] response to play ext tone: #{inspect(response)}")
+    state = Map.put(state, :modem_status, :playing_tone)
+
+    {:reply, :ok, state}
+  end
+
+  def handle_call({:cancel_ext_tone}, _from, %{uart_pid: uart_pid, dtr: dtr} = state) do
+    :ok = wake_FONA(dtr)
+    response = do_cancel_ext_tone(uart_pid)
+
+    Logger.info("[Fona Modem] response to play ext tone: #{inspect(response)}")
 
     {:reply, :ok, state}
   end
 
   @impl GenServer
   def handle_call(:hang_up, {_pid, _reference}, %{uart_pid: uart_pid, dtr: dtr} = state) do
-    Logger.info("[Modem Server] handle call :hangup")
+    Logger.info("[Fona Modem] handle call :hangup")
     do_hang_up(uart_pid)
     sleep_FONA(dtr)
     state = Map.put(state, :modem_status, :on_hook)
@@ -109,14 +147,12 @@ defmodule FonaModem do
       ) do
     state =
       if String.length(phone_number) >= 7 do
-        Logger.info("[Modem Server] handle call :make_phone_call")
+        Logger.info("[Fona Modem] handle call :make_phone_call")
         {:ok, response} = make_voice_call(uart_pid, phone_number)
-        Logger.info("[Modem Server] voice call response: #{inspect(response)}")
+        Logger.info("[Fona Modem] voice call response: #{inspect(response)}")
         Map.put(state, :modem_status, :on_voice_call)
       else
-        Logger.info(
-          "[Modem Server] Mistakes were made.  Don't call phone number: #{phone_number}"
-        )
+        Logger.info("[Fona Modem] Mistakes were made.  Don't call phone number: #{phone_number}")
 
         Map.put(state, :phone_number, "")
       end
@@ -132,25 +168,6 @@ defmodule FonaModem do
       ) do
     {:ok, response} = send_command_get_response(uart_pid, command)
     {:reply, {:ok, response}, state}
-  end
-
-  # Public Api
-  #
-  def play_tone(tone) when is_binary(tone) do
-    GenServer.call(__MODULE__, {:play_tone, tone})
-  end
-
-  def make_phone_call(phone_number) when is_binary(phone_number) do
-    GenServer.call(__MODULE__, {:make_phone_call, phone_number})
-  end
-
-  def send_at_command(command) when is_binary(command) do
-    GenServer.call(__MODULE__, {:send_at_command, command})
-  end
-
-  def hang_up() do
-    GenServer.call(__MODULE__, :hang_up)
-    # GenServer.cast(__MODULE__, {:insert, event})
   end
 
   # Private methods
@@ -169,23 +186,24 @@ defmodule FonaModem do
     if String.match?(response, ~r/CBC/), do: :up, else: :down
   end
 
-  defp do_play_tone(uart_pid, 0) do
-    # kill the playing sound
-    # no EXT, no =, just CPTONEEXT
-    {:ok, response} = send_command_get_response(uart_pid, "AT+CPTONEEXT\r\n")
-    Logger.info("[Modem Server] play tone 0 response #{response}")
+  defp do_play_tone(uart_pid, tone) do
+    Logger.info("[Fona Modem] playing ext tone: #{tone}")
+    tone = if tone == 0, do: 10, else: tone
+    {:ok, response} = send_command_get_response(uart_pid, "AT+CPTONE=#{tone}\r\n")
+    Logger.info("[Fona Modem] play tone response #{response}")
     {:ok, response}
   end
 
-  defp do_play_tone(uart_pid, tone) do
-    if tone == 2 do
-      Logger.info("[Modem Server] playing dial tone")
-    else
-      Logger.info("[Modem Server] playing ext tone: #{tone}")
-    end
+  defp do_cancel_ext_tone(uart_pid) do
+    # kill the playing sound
+    {:ok, response} = send_command_get_response(uart_pid, "AT+CPTONEEXT\r\n")
+    Logger.info("[Fona Modem] play ext tone response #{response}")
+    {:ok, response}
+  end
 
+  defp do_play_ext_tone(uart_pid, tone) do
     {:ok, response} = send_command_get_response(uart_pid, "AT+CPTONEEXT=#{tone}\r\n")
-    Logger.info("[Modem Server] play tone response #{response}")
+    Logger.info("[Fona Modem] play tone response #{response}")
     {:ok, response}
   end
 
@@ -194,31 +212,33 @@ defmodule FonaModem do
   end
 
   defp wake_FONA(dtr) do
+    # this isn't well-tested
     Circuits.GPIO.write(dtr, 0)
   end
 
   defp do_hang_up(uart_pid) do
-    Logger.info("[Modem Server] hanging up")
+    Logger.info("[Fona Modem] hanging up")
     # ATH is ignored unless AT+CVHU=0 is set.  use AT+CHUP instead
     {:ok, _response} = send_command_get_response(uart_pid, "AT+CHUP\r\n")
-    # VOICE CALL:END:000017 <- (timestamp)
     # kill the playing sound
     do_play_tone(uart_pid, 0)
   end
 
   defp set_loudspeaker_volume(uart_pid, volume) do
-    Logger.info("[Modem Server] set loudspeaker volume to: #{volume}")
+    Logger.info("[Fona Modem] set loudspeaker volume to: #{volume}")
     # UART.write(pid, "AT+CPTONE=18\r\n")
     {:ok, _response} = send_command_get_response(uart_pid, "AT+CSDVC=#{volume}\r\n")
   end
 
   defp make_voice_call(uart_pid, phone_number) do
     call_command = "ATD#{phone_number};\r\n"
-    Logger.info("[Modem Server] make voice call using command #{call_command}")
+    Logger.info("[Fona Modem] make voice call using command #{call_command}")
     {:ok, _response} = send_command_get_response(uart_pid, call_command)
   end
 
   defp send_command_get_response(uart_pid, command) do
+    Logger.info("self: #{inspect(self())} uart pid: #{inspect(uart_pid)} command #{command}")
+
     if command != "" do
       Logger.info("sending command: #{command}")
       :ok = UART.write(uart_pid, command)
@@ -231,7 +251,7 @@ defmodule FonaModem do
       do: Logger.warning("unexpected non-string response: #{inspect(response1)}")
 
     if response1 != "" do
-      Logger.info("[Modem Server] command: #{command} 1st response: #{inspect(response1)}")
+      Logger.info("[Fona Modem] command: #{command} 1st response: #{inspect(response1)}")
     end
 
     {:ok, response2} = get_response(uart_pid, @long_timeout_ms)
@@ -240,7 +260,7 @@ defmodule FonaModem do
       Logger.warning("unexpected non-string response: #{inspect(response2)}")
       {:ok, to_string(response2)}
     else
-      Logger.info("[Modem Server] 2nd response: #{response2}")
+      Logger.info("[Fona Modem] 2nd response: #{response2}")
       {:ok, response1 <> response2}
     end
   end
@@ -252,8 +272,8 @@ defmodule FonaModem do
     case UART.read(uart_pid, timeout_ms) do
       {:ok, {:partial, data}} ->
         Logger.info("partial response! partial: #{data}")
-
-        {:ok, data <> get_response(uart_pid, timeout_ms)}
+        {:ok, next_data} = get_response(uart_pid, timeout_ms)
+        {:ok, data <> next_data}
 
       {:ok, data} ->
         Logger.info("returning data: #{data}")
