@@ -266,9 +266,6 @@ defmodule FonaModem do
   end
 
   defp get_response(uart_pid, timeout_ms) do
-    # Circuits.UART.read can return: {:ok, {:partial, "DEFG"}}
-    # is their typespec wrong?
-    # @spec read(GenServer.server(), non_neg_integer()) :: {:ok, binary()} | {:error, File.posix()}
     case UART.read(uart_pid, timeout_ms) do
       {:ok, {:partial, data}} ->
         Logger.info("partial response! partial: #{data}")
