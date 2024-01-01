@@ -269,13 +269,8 @@ defmodule FonaModem do
 
     {:ok, response2} = get_response(uart_pid, @long_timeout_ms)
 
-    if !is_binary(response2) do
-      Logger.warning("unexpected non-string response: #{inspect(response2)}")
-      {:ok, to_string(response2)}
-    else
-      Logger.info("[Fona Modem] 2nd response: #{response2}")
-      {:ok, response1 <> response2}
-    end
+    Logger.info("[Fona Modem] 2nd response: #{response2}")
+    {:ok, response1 <> response2}
   end
 
   defp get_response(uart_pid, timeout_ms) do
