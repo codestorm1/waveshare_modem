@@ -100,7 +100,7 @@ defmodule FonaModem do
   end
 
   @impl GenServer
-  def handle_call({:play_tone, tone}, {_pid, _reference}, %{uart_pid: uart_pid, dtr: dtr} = state) do
+  def handle_call({:play_tone, tone}, _from, %{uart_pid: uart_pid, dtr: dtr} = state) do
     :ok = wake_FONA(dtr)
     response = do_play_tone(uart_pid, tone)
     # {:ok, response} = do_play_tone(uart_pid, tone)
@@ -142,7 +142,7 @@ defmodule FonaModem do
   @impl GenServer
   def handle_call(
         {:make_phone_call, phone_number},
-        {_pid, _reference},
+        _from,
         %{uart_pid: uart_pid} = state
       ) do
     state =
@@ -175,20 +175,33 @@ defmodule FonaModem do
   defp init_modem(uart_pid) do
     # 1 – handset
     # 3 – speaker phone
+    case UART.flush(uart_pid) do
+      {:error, error} -> Logger.info("[Fona Modem] error flushing in init #{inspect(error)}")
+      _ -> :ok
+    end
 
-    {:ok, _response} = send_command_get_response(uart_pid, "ATE0\r\n")
-    {:ok, _response} = send_command_get_response(uart_pid, "AT+CSDVC=3\r\n")
-    {:ok, _response} = send_command_get_response(uart_pid, "AT+CRXGAIN=30000\r\n")
-    {:ok, _response} = send_command_get_response(uart_pid, "AT+CTXGAIN=65535\r\n")
+    {:ok, response} = send_command_get_response(uart_pid, "ATE0\r\n")
+    Logger.info("[Fona Modem] init #{response}")
+    {:ok, response} = send_command_get_response(uart_pid, "AT+CSDVC=1\r\n")
+    Logger.info("[Fona Modem] init #{response}")
+    {:ok, response} = send_command_get_response(uart_pid, "AT+CRXGAIN=30000\r\n")
+    Logger.info("[Fona Modem] init #{response}")
+    {:ok, response} = send_command_get_response(uart_pid, "AT+CTXGAIN=65535\r\n")
+    Logger.info("[Fona Modem] init #{response}")
     # this is a good way to see if AT even responds
     {:ok, response} = send_command_get_response(uart_pid, "AT+CBC\r\n")
+    Logger.info("[Fona Modem] init #{response}")
 
     if String.match?(response, ~r/CBC/), do: :up, else: :down
   end
 
+  defp do_play_tone(uart_pid, "0") do
+    Logger.info("[Fona Modem] don't play 0, play 10!")
+    do_play_tone(uart_pid, 10)
+  end
+
   defp do_play_tone(uart_pid, tone) do
-    Logger.info("[Fona Modem] playing ext tone: #{tone}")
-    tone = if tone == 0, do: 10, else: tone
+    Logger.info("[Fona Modem] playing tone: #{tone}")
     {:ok, response} = send_command_get_response(uart_pid, "AT+CPTONE=#{tone}\r\n")
     Logger.info("[Fona Modem] play tone response #{response}")
     {:ok, response}
