@@ -103,7 +103,6 @@ defmodule FonaModem do
   def handle_call({:play_tone, tone}, _from, %{uart_pid: uart_pid, dtr: dtr} = state) do
     :ok = wake_FONA(dtr)
     response = do_play_tone(uart_pid, tone)
-    # {:ok, response} = do_play_tone(uart_pid, tone)
 
     Logger.info("[Fona Modem] response to play tone: #{inspect(response)}")
     state = Map.put(state, :modem_status, :playing_tone)
@@ -161,11 +160,7 @@ defmodule FonaModem do
   end
 
   @impl GenServer
-  def handle_call(
-        {:send_at_command, command},
-        {_pid, _reference},
-        %{uart_pid: uart_pid} = state
-      ) do
+  def handle_call({:send_at_command, command}, _from, %{uart_pid: uart_pid} = state) do
     {:ok, response} = send_command_get_response(uart_pid, command)
     {:reply, {:ok, response}, state}
   end
@@ -180,43 +175,45 @@ defmodule FonaModem do
       _ -> :ok
     end
 
-    {:ok, response} = send_command_get_response(uart_pid, "ATE0\r\n")
-    Logger.info("[Fona Modem] init #{response}")
-    {:ok, response} = send_command_get_response(uart_pid, "AT+CSDVC=1\r\n")
-    Logger.info("[Fona Modem] init #{response}")
-    {:ok, response} = send_command_get_response(uart_pid, "AT+CRXGAIN=30000\r\n")
-    Logger.info("[Fona Modem] init #{response}")
-    {:ok, response} = send_command_get_response(uart_pid, "AT+CTXGAIN=65535\r\n")
-    Logger.info("[Fona Modem] init #{response}")
-    # this is a good way to see if AT even responds
+    # don't echo commands
+    {:ok, _response} = send_command_get_response(uart_pid, "ATE0\r\n")
+    # allow ATH to hang up voice calls
+    {:ok, _response} = send_command_get_response(uart_pid, "AT+CVHU=0\r\n")
+    # use handset
+    {:ok, _response} = send_command_get_response(uart_pid, "AT+CSDVC=1\r\n")
+
+    # increase gain for sound and microphone
+    {:ok, _response} = send_command_get_response(uart_pid, "AT+CRXGAIN=30000\r\n")
+    {:ok, _response} = send_command_get_response(uart_pid, "AT+CTXGAIN=65535\r\n")
+
+    # using CBC command to see if AT responds, and if the response is for this command, not a previous one
     {:ok, response} = send_command_get_response(uart_pid, "AT+CBC\r\n")
-    Logger.info("[Fona Modem] init #{response}")
 
     if String.match?(response, ~r/CBC/), do: :up, else: :down
   end
 
   defp do_play_tone(uart_pid, "0") do
-    Logger.info("[Fona Modem] don't play 0, play 10!")
-    do_play_tone(uart_pid, 10)
+    do_play_tone(uart_pid, "10")
+  end
+
+  defp do_play_tone(uart_pid, 0) do
+    do_play_tone(uart_pid, "10")
   end
 
   defp do_play_tone(uart_pid, tone) do
     Logger.info("[Fona Modem] playing tone: #{tone}")
     {:ok, response} = send_command_get_response(uart_pid, "AT+CPTONE=#{tone}\r\n")
-    Logger.info("[Fona Modem] play tone response #{response}")
     {:ok, response}
   end
 
   defp do_cancel_ext_tone(uart_pid) do
     # kill the playing sound
     {:ok, response} = send_command_get_response(uart_pid, "AT+CPTONEEXT\r\n")
-    Logger.info("[Fona Modem] play ext tone response #{response}")
     {:ok, response}
   end
 
   defp do_play_ext_tone(uart_pid, tone) do
     {:ok, response} = send_command_get_response(uart_pid, "AT+CPTONEEXT=#{tone}\r\n")
-    Logger.info("[Fona Modem] play tone response #{response}")
     {:ok, response}
   end
 
@@ -239,19 +236,15 @@ defmodule FonaModem do
 
   defp set_loudspeaker_volume(uart_pid, volume) do
     Logger.info("[Fona Modem] set loudspeaker volume to: #{volume}")
-    # UART.write(pid, "AT+CPTONE=18\r\n")
     {:ok, _response} = send_command_get_response(uart_pid, "AT+CSDVC=#{volume}\r\n")
   end
 
   defp make_voice_call(uart_pid, phone_number) do
     call_command = "ATD#{phone_number};\r\n"
-    Logger.info("[Fona Modem] make voice call using command #{call_command}")
     {:ok, _response} = send_command_get_response(uart_pid, call_command)
   end
 
   defp send_command_get_response(uart_pid, command) do
-    Logger.info("self: #{inspect(self())} uart pid: #{inspect(uart_pid)} command #{command}")
-
     if command != "" do
       Logger.info("sending command: #{command}")
       :ok = UART.write(uart_pid, command)
@@ -260,8 +253,9 @@ defmodule FonaModem do
     # Need to get 2 responses.  First will be blank, second will have response.
     {:ok, response1} = get_response(uart_pid, @quick_timeout_ms)
 
-    if !is_binary(response1),
-      do: Logger.warning("unexpected non-string response: #{inspect(response1)}")
+    if !is_binary(response1) do
+      Logger.warning("unexpected non-string response: #{inspect(response1)}")
+    end
 
     if response1 != "" do
       Logger.info("[Fona Modem] command: #{command} 1st response: #{inspect(response1)}")
