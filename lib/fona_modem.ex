@@ -171,7 +171,7 @@ defmodule FonaModem do
     # 1 – handset
     # 3 – speaker phone
     case UART.flush(uart_pid) do
-      {:error, error} -> Logger.info("[Fona Modem] error flushing in init #{inspect(error)}")
+      {:error, error} -> Logger.error("[Fona Modem] error flushing in init #{inspect(error)}")
       _ -> :ok
     end
 
@@ -218,6 +218,7 @@ defmodule FonaModem do
   end
 
   defp sleep_FONA(dtr) do
+    # this isn't well-tested
     Circuits.GPIO.write(dtr, 1)
   end
 
@@ -230,8 +231,10 @@ defmodule FonaModem do
     Logger.info("[Fona Modem] hanging up")
     # ATH is ignored unless AT+CVHU=0 is set.  use AT+CHUP instead
     {:ok, _response} = send_command_get_response(uart_pid, "AT+CHUP\r\n")
+
+    # {:ok, _response} = send_command_get_response(uart_pid, "ATH\r\n")
     # kill the playing sound
-    do_play_tone(uart_pid, 0)
+    # do_play_tone(uart_pid, 0)
   end
 
   defp set_loudspeaker_volume(uart_pid, volume) do
