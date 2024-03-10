@@ -54,6 +54,10 @@ defmodule WaveshareModem do
     # GenServer.cast(__MODULE__, {:insert, event})
   end
 
+  def register_ring_indicator(pid) do
+    GenServer.cast(__MODULE__, {:register_ring_indicator, pid})
+  end
+
   def start_link(state) do
     Logger.info("[AT Modem] start_link")
     GenServer.start_link(__MODULE__, state, name: WaveshareModem)
@@ -64,6 +68,7 @@ defmodule WaveshareModem do
     Logger.info("[AT Modem] init.  pid: #{inspect(self())}")
     uart_name = Application.fetch_env!(:fona_modem, :uart_name)
     ring_indicator_pin = Application.fetch_env!(:fona_modem, :ring_indicator_pin)
+    Logger.info("[AT Modem] init.  RI pin: #{ring_indicator_pin}")
     {:ok, ri_gpio} = Circuits.GPIO.open(ring_indicator_pin, :input)
 
     :ok = Circuits.GPIO.set_interrupts(ri_gpio, :both)
@@ -88,7 +93,14 @@ defmodule WaveshareModem do
 
     {:ok, _response} = set_loudspeaker_volume(uart_pid, @max_volume)
 
-    state = %{uart_pid: uart_pid, modem_status: modem_status, ri_pin: ring_indicator_pin}
+    state = %{
+      uart_pid: uart_pid,
+      modem_status: modem_status,
+      ri_gpio: ri_gpio,
+      ri_pin: ring_indicator_pin,
+      ri_listener: nil
+    }
+
     {:ok, state}
   end
 
@@ -156,14 +168,73 @@ defmodule WaveshareModem do
 
   @impl GenServer
   def handle_info(
-        {:circuits_gpio, ri_pin, _timestamp, value},
-        %{
-          ri_pin: ri_pin
-        } = state
+        {:circuits_gpio, ri_pin, _timestamp, _value},
+        %{ri_pin: ri_pin, ri_listener: nil} = state
       ) do
-    Logger.info("RI pin triggered with value: #{value}")
+    Logger.info("Incoming call detected - no listener")
     {:noreply, state}
   end
+
+  @impl GenServer
+  def handle_info(
+        {:circuits_gpio, ri_pin, _timestamp, 0},
+        %{ri_pin: ri_pin, ri_listener: listener_pid} = state
+      ) do
+    Logger.info("Incoming call detected")
+    Process.send(listener_pid, {:incoming_ring, true}, [])
+    {:noreply, state}
+  end
+
+  @impl GenServer
+  def handle_info(
+        {:circuits_gpio, ri_pin, _timestamp, 1},
+        %{ri_pin: ri_pin, ri_listener: listener_pid} = state
+      ) do
+    Logger.info("Incoming call stopped")
+    Process.send(listener_pid, {:incoming_ring, false}, [])
+    {:noreply, state}
+  end
+
+  @impl GenServer
+  def handle_info(
+        {:circuits_gpio, ri_pin, _timestamp, 1},
+        %{ri_pin: ri_pin} = state
+      ) do
+    Logger.info("No listener.")
+    {:noreply, state}
+  end
+
+  @impl GenServer
+  def handle_info(
+        {:circuits_gpio, pin, _timestamp, value},
+        %{ri_pin: pin} = state
+      ) do
+    Logger.info("match both numbers")
+    Logger.info("unhandled - pin #{pin} triggered with value: #{value}")
+    # Logger.info("unhandled - ri pin was: #{ri_pin}")
+    {:noreply, state}
+  end
+
+  @impl GenServer
+  def handle_info(
+        {:circuits_gpio, pin, _timestamp, value},
+        %{ri_pin: ri_pin} = state
+      ) do
+    Logger.info("not both numbers")
+    Logger.info("unhandled - pin #{pin} triggered with value: #{value}")
+    Logger.info("unhandled - ri pin was: #{ri_pin}")
+    {:noreply, state}
+  end
+
+  @impl GenServer
+  def handle_cast({:register_ring_indicator, pid}, state) do
+    Logger.info("incoming phone call messages will be sent to #{inspect(pid)}")
+    {:noreply, Map.put(state, :ri_listener, pid)}
+  end
+
+  #   {:circuits_gpio, 21, 528492710495, 1}
+  # {:circuits_gpio, 21, 528593168216, 0}
+  # {:circuits_gpio, 21, 529982713474, 1}
 
   # Private methods
 
