@@ -24,8 +24,8 @@ defmodule WaveshareModem do
   # 4 seconds seems too long, why are :partial results coming in?
   @rx_framing_timeout 4000
 
-  @tone_duration 500
-  @tone_gain 5000
+  @tone_duration 200
+  @tone_gain 9000
 
   # Client API
   #
@@ -56,7 +56,7 @@ defmodule WaveshareModem do
 
   def start_link(state) do
     Logger.info("[AT Modem] start_link")
-    GenServer.start_link(__MODULE__, state, name: FonaModem)
+    GenServer.start_link(__MODULE__, state, name: WaveshareModem)
   end
 
   @impl GenServer
