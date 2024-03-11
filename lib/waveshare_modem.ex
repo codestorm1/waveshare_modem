@@ -45,6 +45,10 @@ defmodule WaveshareModem do
     GenServer.call(__MODULE__, {:make_phone_call, phone_number})
   end
 
+  def answer_call() do
+    GenServer.call(__MODULE__, :answer_call)
+  end
+
   def send_at_command(command) when is_binary(command) do
     GenServer.call(__MODULE__, {:send_at_command, command})
   end
@@ -161,6 +165,21 @@ defmodule WaveshareModem do
   end
 
   @impl GenServer
+  def handle_call(
+        :answer_call,
+        _from,
+        %{uart_pid: uart_pid} = state
+      ) do
+    Logger.info("[AT Modem] handle call :answer_call")
+    call_command = "ATA\r\n"
+    {:ok, response} = send_command_get_response(uart_pid, call_command)
+    Logger.info("[AT Modem] answer call response: #{inspect(response)}")
+    state = Map.put(state, :modem_status, :on_voice_call)
+
+    {:reply, :ok, state}
+  end
+
+  @impl GenServer
   def handle_call({:send_at_command, command}, _from, %{uart_pid: uart_pid} = state) do
     {:ok, response} = send_command_get_response(uart_pid, command)
     {:reply, {:ok, response}, state}
@@ -231,10 +250,6 @@ defmodule WaveshareModem do
     Logger.info("incoming phone call messages will be sent to #{inspect(pid)}")
     {:noreply, Map.put(state, :ri_listener, pid)}
   end
-
-  #   {:circuits_gpio, 21, 528492710495, 1}
-  # {:circuits_gpio, 21, 528593168216, 0}
-  # {:circuits_gpio, 21, 529982713474, 1}
 
   # Private methods
 
