@@ -20,7 +20,7 @@ erl_crash.dump
 *.ez
 
 # Ignore package tarball (built via "mix hex.build").
-fona_modem-*.tar
+waveshare_modem-*.tar
 
 # Temporary files, for example, from tests.
 /tmp/

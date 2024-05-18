@@ -70,8 +70,8 @@ defmodule WaveshareModem do
   @impl GenServer
   def init(_init_state) do
     Logger.info("[AT Modem] init.  pid: #{inspect(self())}")
-    uart_name = Application.fetch_env!(:fona_modem, :uart_name)
-    ring_indicator_pin = Application.fetch_env!(:fona_modem, :ring_indicator_pin)
+    uart_name = Application.fetch_env!(:waveshare_modem, :uart_name)
+    ring_indicator_pin = Application.fetch_env!(:waveshare_modem, :ring_indicator_pin)
     Logger.info("[AT Modem] init.  RI pin: #{ring_indicator_pin}")
     {:ok, ri_gpio} = Circuits.GPIO.open(ring_indicator_pin, :input)
 

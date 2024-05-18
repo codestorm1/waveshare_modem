@@ -1,9 +1,9 @@
-defmodule FonaModem.MixProject do
+defmodule WaveshareModem.MixProject do
   use Mix.Project
 
   def project do
     [
-      app: :fona_modem,
+      app: :waveshare_modem,
       version: "0.1.0",
       elixir: "~> 1.13",
       start_permanent: Mix.env() == :prod,
