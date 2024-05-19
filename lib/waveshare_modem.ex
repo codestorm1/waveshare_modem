@@ -273,7 +273,9 @@ defmodule WaveshareModem do
 
     {:ok, _response} = send_command_get_response(uart_pid, "AT+CRXVOL=?\r\n")
     # increase gain for sound and microphone
-    {:ok, _response} = send_command_get_response(uart_pid, "AT+COUTGAIN=30000\r\n")
+
+    # doesn't work on waveshare
+    # {:ok, _response} = send_command_get_response(uart_pid, "AT+COUTGAIN=30000\r\n")
     # {:ok, _response} = send_command_get_response(uart_pid, "AT+CTXGAIN=65535\r\n")
 
     # using CBC command to see if AT responds, and if the response is for this command, not a previous one
