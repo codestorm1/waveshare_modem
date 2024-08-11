@@ -328,6 +328,8 @@ defmodule WaveshareModem do
   end
 
   defp make_voice_call(uart_pid, phone_number) do
+    {:ok, response} = get_response(uart_pid, @long_timeout_ms)
+    Logger.info("flushing before dialing: #{inspect(response)}")
     call_command = "ATD#{phone_number};\r\n"
     {:ok, _response} = send_command_get_response(uart_pid, call_command)
   end
