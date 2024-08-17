@@ -14,9 +14,6 @@ defmodule WaveshareModem do
   # Callbacks
   require Logger
 
-  # @network_status_pin 2
-  # @power_status_pin 3
-
   @max_volume 8
   @quick_timeout_ms 500
   @long_timeout_ms 2000
@@ -70,8 +67,11 @@ defmodule WaveshareModem do
   @impl GenServer
   def init(_init_state) do
     Logger.info("[AT Modem] init.  pid: #{inspect(self())}")
-    uart_name = Application.fetch_env!(:waveshare_modem, :uart_name)
-    ring_indicator_pin = Application.fetch_env!(:waveshare_modem, :ring_indicator_pin)
+    # uart_name = Application.fetch_env!(:waveshare_modem, :uart_name)
+    uart_name = "ttyAMA0"
+    # ring_indicator_pin = Application.fetch_env!(:waveshare_modem, :ring_indicator_pin)
+    ring_indicator_pin = 17
+    # Application.fetch_env!(:waveshare_modem, :ring_indicator_pin)
     Logger.info("[AT Modem] init.  RI pin: #{ring_indicator_pin}")
     {:ok, ri_gpio} = Circuits.GPIO.open(ring_indicator_pin, :input)
 
@@ -328,8 +328,9 @@ defmodule WaveshareModem do
   end
 
   defp make_voice_call(uart_pid, phone_number) do
-    {:ok, response} = get_response(uart_pid, @long_timeout_ms)
-    Logger.info("flushing before dialing: #{inspect(response)}")
+    # {:ok, response} = get_response(uart_pid, @long_timeout_ms)
+    # Logger.info("flushing before dialing: #{inspect(response)}")
+    UART.flush(uart_pid, :both)
     call_command = "ATD#{phone_number};\r\n"
     {:ok, _response} = send_command_get_response(uart_pid, call_command)
   end
