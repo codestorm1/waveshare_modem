@@ -23,7 +23,7 @@ defmodule WaveshareModem do
 
   @tone_duration 200
   @tone_gain 9000
-
+  @uart_speed 115_200
   # Client API
   #
   def play_tone(tone) do
@@ -67,26 +67,20 @@ defmodule WaveshareModem do
   @impl GenServer
   def init(_init_state) do
     Logger.info("[AT Modem] init.  pid: #{inspect(self())}")
-    # uart_name = Application.fetch_env!(:waveshare_modem, :uart_name)
-    uart_name = "ttyAMA0"
-    # ring_indicator_pin = Application.fetch_env!(:waveshare_modem, :ring_indicator_pin)
-    ring_indicator_pin = 17
-    # Application.fetch_env!(:waveshare_modem, :ring_indicator_pin)
+    uart_name = Application.fetch_env!(:waveshare_modem, :uart_name)
+    ring_indicator_pin = Application.fetch_env!(:waveshare_modem, :ring_indicator_pin)
     Logger.info("[AT Modem] init.  RI pin: #{ring_indicator_pin}")
     {:ok, ri_gpio} = Circuits.GPIO.open(ring_indicator_pin, :input)
 
     :ok = Circuits.GPIO.set_interrupts(ri_gpio, :both)
 
     {:ok, uart_pid} = UART.start_link()
-    speed = 115_200
 
     # Mango Pi Pro
     # :ok = UART.open(uart_pid, "ttyS0", speed: 115_200, active: false)
-    Logger.info("[AT Modem] open uart at name #{uart_name} at speed #{speed}")
+    Logger.info("[AT Modem] open uart at name #{uart_name} at speed #{@uart_speed}")
 
-    :ok = UART.open(uart_pid, uart_name, speed: speed, active: false)
-
-    # Pins that can be flipped for sleeping/preventing sleep on the FONA 3G
+    :ok = UART.open(uart_pid, uart_name, speed: @uart_speed, active: false)
 
     # TODO: try a different value
     UART.configure(uart_pid, rx_framing_timeout: @rx_framing_timeout)
@@ -258,17 +252,16 @@ defmodule WaveshareModem do
     # 3 – speaker phone
     case UART.flush(uart_pid) do
       {:error, error} -> Logger.error("[AT Modem] error flushing in init #{inspect(error)}")
-      _ -> :ok
+      _ -> nil
     end
 
     # don't echo commands
     {:ok, _response} = send_command_get_response(uart_pid, "ATE0\r\n")
-    # allow ATH to hang up voice calls
+    # allow ATH command to hang up voice calls
     {:ok, _response} = send_command_get_response(uart_pid, "AT+CVHU=0\r\n")
     # use handset
     {:ok, _response} = send_command_get_response(uart_pid, "AT+CSDVC=1\r\n")
 
-    #
     {:ok, _response} = send_command_get_response(uart_pid, "AT+CLVL=5\r\n")
 
     {:ok, _response} = send_command_get_response(uart_pid, "AT+CRXVOL=?\r\n")
@@ -328,8 +321,8 @@ defmodule WaveshareModem do
   end
 
   defp make_voice_call(uart_pid, phone_number) do
-    # {:ok, response} = get_response(uart_pid, @long_timeout_ms)
-    # Logger.info("flushing before dialing: #{inspect(response)}")
+    {:ok, response} = get_response(uart_pid, @long_timeout_ms)
+    Logger.info("flushing before dialing: #{inspect(response)}")
     UART.flush(uart_pid, :both)
     call_command = "ATD#{phone_number};\r\n"
     {:ok, _response} = send_command_get_response(uart_pid, call_command)
