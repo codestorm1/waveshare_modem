@@ -321,9 +321,13 @@ defmodule WaveshareModem do
   end
 
   defp make_voice_call(uart_pid, phone_number) do
-    {:ok, response} = get_response(uart_pid, @long_timeout_ms)
-    Logger.info("flushing before dialing: #{inspect(response)}")
-    UART.flush(uart_pid, :both)
+    unread = read_until_timeout(uart_pid, @quick_timeout_ms)
+
+    case UART.flush(uart_pid, :both) do
+      :ok -> Logger.info("flush completed")
+      {:error, error} -> Logger.error("[AT Modem] error flushing in init #{inspect(error)}")
+    end
+
     call_command = "ATD#{phone_number};\r\n"
     {:ok, _response} = send_command_get_response(uart_pid, call_command)
   end
@@ -349,6 +353,19 @@ defmodule WaveshareModem do
 
     Logger.info("[AT Modem] 2nd response: #{response2}")
     {:ok, response1 <> response2}
+  end
+
+  defp read_until_timeout(uart_pid, timeout_ms) do
+    case get_response(uart_pid, timeout_ms) do
+      # timeouts result in a return value of an empty string
+      {:ok, ""} ->
+        Logger.info("nothing read from UART")
+        ""
+
+      {:ok, data} ->
+        Logger.info("reading strings left in UART #{data}")
+        read_until_timeout(uart_pid, timeout_ms)
+    end
   end
 
   defp get_response(uart_pid, timeout_ms) do
