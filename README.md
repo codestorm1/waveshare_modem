@@ -1,8 +1,11 @@
 # WaveshareModem
 
 This library is for communicating with modems that use the AT command set.
+
 It was used with Adafruit FONA modems.
+
 It is currently used for Waveshare HATs
+
 It is used by codestorm1/vintage_cell as a file system reference.
 
 
