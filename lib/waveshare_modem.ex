@@ -301,6 +301,7 @@ defmodule WaveshareModem do
   end
 
   defp do_play_ext_tone(uart_pid, tone) do
+    # not supported on the WaveShare
     {:ok, response} = send_command_get_response(uart_pid, "AT+CPTONEEXT=#{tone}\r\n")
     {:ok, response}
   end
@@ -322,6 +323,7 @@ defmodule WaveshareModem do
 
   defp make_voice_call(uart_pid, phone_number) do
     unread = read_until_timeout(uart_pid, @quick_timeout_ms)
+    Logger.info("unread in UART: #{unread}")
 
     case UART.flush(uart_pid, :both) do
       :ok -> Logger.info("flush completed")
@@ -356,6 +358,10 @@ defmodule WaveshareModem do
   end
 
   defp read_until_timeout(uart_pid, timeout_ms) do
+    read_until_timeout(uart_pid, timeout_ms, "")
+  end
+
+  defp read_until_timeout(uart_pid, timeout_ms, unread) do
     case get_response(uart_pid, timeout_ms) do
       # timeouts result in a return value of an empty string
       {:ok, ""} ->
@@ -364,7 +370,7 @@ defmodule WaveshareModem do
 
       {:ok, data} ->
         Logger.info("reading strings left in UART #{data}")
-        read_until_timeout(uart_pid, timeout_ms)
+        read_until_timeout(uart_pid, timeout_ms, unread <> data)
     end
   end
 
